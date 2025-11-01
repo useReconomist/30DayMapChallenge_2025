@@ -1,0 +1,12 @@
+name: App_Denue
+title: App_Denue
+username: noe-osorio-garcia
+account: noe-osorio-garcia
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15936772
+bundleId: 11117722
+url: https://noe-osorio-garcia.shinyapps.io/App_Denue/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
