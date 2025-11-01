@@ -6,7 +6,7 @@ library(echarts4r)
 scian= read_rds("scian.rds")
 # De acá puedes sacar el DENUE
 # https://www.inegi.org.mx/servicios/api_denue.html#
-
+token_inegi=""
 
 ui = div(
   tags$head(
@@ -456,7 +456,7 @@ server = function(input, output, session) {
                round(rv$current_click$lat,6), ",", 
                round(rv$current_click$lng,6), "/", 
                input$id_radio, "/", 
-               "fbc6c57d-182c-40ea-965b-32c3809ce908"), 
+              token_inegi), 
         flatten = TRUE
       ) %>% 
         mutate(Longitud = as.numeric(Longitud), Latitud = as.numeric(Latitud)) %>% 
