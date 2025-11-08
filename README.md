@@ -6,3 +6,4 @@ Puedes onteber tu token del INEGI Denue en su portal: https://www.inegi.org.mx/s
 Puedes ver la app acá
 https://noe-osorio-garcia.shinyapps.io/App_Denue/
 
+Día 7 Accesibiidad: Unidad de salud más cercana
