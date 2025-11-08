@@ -54,7 +54,7 @@ procesar_ruta <- function(llave_id, ageb_data, clues_data) {
     
     ruta <- osrmRoute(src = origen, 
                       dst = destino, 
-                      osrm.profile = "bike") %>%
+                      osrm.profile = "foot") %>%
       mutate(id = llave_id)
     
     return(ruta)
@@ -111,7 +111,7 @@ ageb_salud_mapa = ageb_salud %>% filter(CVEGEO%in%parkour_final$ageb) %>%
 # navigation-night, standard-satellite.
 
 parkour_final = parkour_final %>% 
-  mutate(tiempo_caminando = paste0(round(duration*2.87,0)," Minutos Caminando"))
+  mutate(tiempo_caminando = paste0(round(duration,0)," Minutos Caminando"))
 
 
 movilidad = maplibre(
