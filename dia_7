@@ -1,0 +1,160 @@
+# A través de ese link puedes instalr "osrm.backend"
+# remotes::install_github("https://github.com/e-kotov/osrm.backend")
+library(osrm.backend)
+library(osrm)
+library(sf)
+
+# Datos de méxico de OSM
+# https://download.geofabrik.de/north-america/mexico.html
+internal_pbf = "mexico-251106.osm.pbf"
+
+osrm_temp_dir = file.path(tempdir(), paste0("osrm-data-", Sys.getpid()))
+dir.create(osrm_temp_dir, showWarnings = FALSE, recursive = TRUE)
+file.copy(from = internal_pbf, to = osrm_temp_dir)
+osrm_start(osrm_temp_dir)
+
+osrm_servers()
+
+ageb = st_read(
+  "Marco_Geo_2020\\889463807469_s\\MG_2020_Integrado\\conjunto_de_datos\\00a.shp"
+) %>% 
+  st_transform(crs=4326)
+
+clues<- readxl::read_excel("C:/Users/DELL/Downloads/ESTABLECIMIENTO_SALUD_202509.xlsx") %>% 
+  janitor::clean_names() 
+
+library(tidyverse)
+
+clues = clues %>%
+  janitor::clean_names() %>% 
+  select(id_clues=clues,longitud,latitud) %>% 
+  filter(!is.na(longitud),!is.na(latitud)) %>% 
+  st_as_sf(coords=c("longitud","latitud"),crs=4326)
+
+sf::sf_use_s2(F)
+
+ageb_salud =ageb %>% 
+  st_centroid() %>% 
+  st_join(clues,
+          join = st_nearest_feature)
+
+options("osrm.server" = "http://localhost:5001/")
+
+ageb_salud=ageb_salud %>% mutate(llave=paste0(CVEGEO,"-",id_clues))
+
+library(furrr)
+library(future)
+
+plan(multisession, workers = parallel::detectCores())
+
+procesar_ruta <- function(llave_id, ageb_data, clues_data) {
+  tryCatch({
+    origen <- ageb_data %>% filter(llave == llave_id)
+    destino <- clues %>% filter(id_clues == origen$id_clues)
+    
+    ruta <- osrmRoute(src = origen, 
+                      dst = destino, 
+                      osrm.profile = "bike") %>%
+      mutate(id = llave_id)
+    
+    return(ruta)
+  }, error = function(e) {
+    warning(paste("Error en llave", llave_id, ":", e$message))
+    return(NULL)
+  })
+}
+
+contenedor <- future_map_dfr(
+  ageb_salud$llave,
+  ~procesar_ruta(.x, ageb_salud, clues),
+  .progress = TRUE,
+  .options = furrr_options(seed = TRUE)
+)
+
+
+imu = readxl::read_excel(
+  "IMU_2020 (4)/IMU_2020.xls",sheet = "IMU_2020"
+)
+
+parkour = contenedor %>% 
+  separate(id,into = c("ageb","clues"),sep = "-")
+
+parkour_final = parkour %>% 
+  filter(ageb%in%imu$CVE_AGEB) %>% 
+  left_join(imu %>% select(1,GM_2020,IM_2020,IMN_2020),by=c("ageb"="CVE_AGEB")) %>% 
+  mutate(GM_2020=forcats::fct_reorder(GM_2020,IMN_2020))
+
+sf::st_write(obj = parkour_final,"ruta_salud_agebs.gpkg")
+
+estados = st_read(
+  "MG_2020_Integrado\\conjunto_de_datos\\00ent.shp"
+) %>% 
+  st_transform(crs=4326)
+
+municipios = st_read(
+  "MG_2020_Integrado\\conjunto_de_datos\\00mun.shp"
+) %>% 
+  st_transform(crs=4326)
+
+
+
+quantile(parkour_final$distance,probs = c(seq(0,1,by=.02)))
+
+
+library(mapgl)
+
+ageb_salud_mapa = ageb_salud %>% filter(CVEGEO%in%parkour_final$ageb) %>% 
+  left_join(parkour_final %>% as_tibble() %>% select(ageb,GM_2020),by=c("CVEGEO"="ageb"))
+
+# standard, streets, outdoors, light, 
+# dark, satellite, satellite-streets, navigation-day,
+# navigation-night, standard-satellite.
+
+parkour_final = parkour_final %>% 
+  mutate(tiempo_caminando = paste0(round(duration*2.87,0)," Minutos Caminando"))
+
+
+movilidad = maplibre(
+  bounds =c(-121.3888,11.94008,-83.43103,34.005),
+  maxBounds=c(-121.3888, 11.94008, -83.43103, 34.005),
+  zoomMax=15,
+  ) %>% 
+  add_circle_layer(id = "clues",
+                   source = clues[clues$id_clues%in%parkour_final$clues,],
+                   circle_color = "#e34a33",
+                   tooltip = "id_clues",
+                   hover_options = list(circle_radius = 15,
+                                        circle_color = "#ffff99")
+                   ) %>% 
+  add_circle_layer(
+    id = "agebs",
+    source = ageb_salud_mapa,
+    tooltip = "CVEGEO",
+    hover_options = list(circle_radius = 12,
+                         circle_color = "#ffff99"),
+    circle_color = match_expr(
+      "GM_2020",
+      values = c("Muy alto", "Alto", "Medio",
+                 "Bajo","Muy bajo"),
+      stops = viridis::viridis(n = 5)
+    )) %>% 
+  add_line_layer(id = "ruta",
+                 source = parkour_final %>% filter(distance<50),
+                 tooltip = "tiempo_caminando",
+                 hover_options = list(color="red"),
+                 line_color = match_expr(
+                   "GM_2020",
+                   values = c("Muy alto", "Alto", "Medio",
+                              "Bajo","Muy bajo"),
+                   stops = viridis::viridis(n = 5)
+                 )) %>% 
+  add_categorical_legend(
+    legend_title =  "Grado de Marginación<br>y Unidad de Salud más Cercana",
+    values = c("Muy alto", "Alto", "Medio",
+               "Bajo","Muy bajo","Unidad de salud más Cercana"),
+    colors =  c(viridis::viridis(n = 5),"red")
+  )
+
+
+write_rds(movilidad,"../dia_movilidad_2.rds")
+
