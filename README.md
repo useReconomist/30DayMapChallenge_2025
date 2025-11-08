@@ -7,3 +7,4 @@ Puedes ver la app acá
 https://noe-osorio-garcia.shinyapps.io/App_Denue/
 
 Día 7 Accesibiidad: Unidad de salud más cercana
+https://noeosorio-pk.quarto.pub/day_7_accessibility_30daymapchallenge2025-06fb/
