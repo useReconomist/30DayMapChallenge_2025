@@ -1,0 +1,80 @@
+library(furrr)
+library(future)
+library(sf)
+library(sfdep)
+library(dplyr)
+
+plan(multisession, workers = parallel::detectCores())
+
+descarga_edo = function(estado) {
+  tryCatch({
+    mun = sf::st_read(paste0("https://gaia.inegi.org.mx/wscatgeo/v2/geo/mgem/", estado),quiet = TRUE)
+    return(mun)
+  }, error = function(e) {
+    warning(paste("Error en el estado", estado, ":", e$message))
+    return(NULL)
+  })
+}
+
+estados = sprintf("%02d", 1:32)
+
+contenedor = future_map_dfr(
+  estados,
+  ~descarga_edo(.x),
+  .progress = TRUE,
+  .options = furrr_options(seed = TRUE)
+)
+
+matriz_edo = function(estado) {
+  tryCatch({
+    mun = contenedor %>%
+      filter(cve_ent==estado) %>% 
+      mutate(nb=st_contiguity(geometry),
+             wt=st_weights(nb)) %>% 
+      sfdep::st_as_graph(nb=nb,wt = wt) %>% 
+      sf::st_as_sf("edges") %>% 
+      mutate(id=estado)
+    return(mun)
+  }, error = function(e) {
+    warning(paste("Error en el estado", estado, ":", e$message))
+    return(NULL)
+  })
+}
+
+matriz_mexico = future_map_dfr(
+  estados,
+  ~matriz_edo(.x),
+  .progress = TRUE,
+  .options = furrr_options(seed = TRUE)
+)
+
+g = purrr::map(unique(matriz_mexico$id),
+                function(x) {
+                  ggplot() +
+                    geom_sf(data = filter(matriz_mexico, id == x),color="black",linewidth=.3) +
+                    guides(fill = FALSE) +
+                    ggtitle(x)+
+                    theme_void()
+                  })
+
+library(ggthemes)
+
+g2 = cowplot::plot_grid(plotlist = g)
+
+final = cowplot::ggdraw(g2) +
+  cowplot::draw_label("#30daymapchallenge\nMinimal Map\nNoepk", 
+                      x = 0.5, 
+                      y = 0.1,
+                      hjust = 0.5,
+                      vjust = 1,
+                      fontface = 'bold',
+                      size = 16
+                      )
+
+ggsave(filename = "minimalista.png",
+       plot = final,
+       width = 12,
+       height = 8,
+       dpi = 500,
+       bg = "white"
+       )
